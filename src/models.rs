@@ -1,0 +1,24 @@
+use clap::Parser;
+use std::path::PathBuf;
+use url::Url;
+
+#[derive(Parser, Debug, Clone)]
+pub struct Args {
+    #[arg(long)]
+    pub index: String,
+
+    #[arg(long)]
+    pub output: PathBuf,
+
+    #[arg(long, default_value_t = 3)]
+    pub depth: usize,
+
+    #[arg(long, default_value_t = 4)]
+    pub workers: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct Job {
+    pub url: Url,
+    pub depth: usize,
+}
