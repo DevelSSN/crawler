@@ -1,3 +1,3 @@
-/target
-**/
-!src/
+/spider/target
+/spider/crawl_docs
+TODO.md
