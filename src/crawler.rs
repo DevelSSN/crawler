@@ -87,6 +87,7 @@ pub async fn process_url(
     output: &PathBuf,
     job: Job,
     should_extract: bool,
+    hardcode_external: bool,
 ) -> Result<Vec<Url>> {
     let (bytes, final_url, is_html, is_css) = fetch_url(client, &job.url).await?;
 
@@ -98,9 +99,183 @@ pub async fn process_url(
         Vec::new()
     };
 
-    save_to_disk(&file_path, &bytes).await?;
+    let final_bytes = if is_html || is_css {
+        rewrite_content(&bytes, &final_url, root, is_html, is_css, hardcode_external)
+    } else {
+        bytes
+    };
+
+    save_to_disk(&file_path, &final_bytes).await?;
 
     Ok(extracted)
+}
+
+fn rewrite_content(
+    bytes: &[u8],
+    base: &Url,
+    root: &Url,
+    is_html: bool,
+    is_css: bool,
+    hardcode_external: bool,
+) -> Vec<u8> {
+    let content = String::from_utf8_lossy(bytes);
+    let rewritten = if is_html {
+        rewrite_html(&content, base, root, hardcode_external)
+    } else if is_css {
+        rewrite_css(&content, base, root, hardcode_external)
+    } else {
+        content.into_owned()
+    };
+    rewritten.into_bytes()
+}
+
+fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) -> String {
+    // This is a naive regex-based replacement for simplicity without new dependencies.
+    // In a production environment, a proper HTML parser (like lol_html) would be preferred.
+    let mut result = content.to_string();
+
+    // Patterns for href, src
+    let patterns = [
+        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"(#[^"]*)"#).unwrap(), false), // Fragments (keep)
+        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"([^"]+)"#).unwrap(), true),
+        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*'([^']+)'"#).unwrap(), true),
+    ];
+
+    for (re, is_url) in patterns {
+        if !is_url { continue; }
+        
+        let mut new_result = result.clone();
+        let mut offset = 0;
+
+        for cap in re.captures_iter(&result) {
+            let attr = cap.get(1).unwrap().as_str();
+            let val = cap.get(2).unwrap().as_str();
+            let full_match = cap.get(0).unwrap();
+
+            if val.starts_with('#') || val.starts_with("mailto:") || val.starts_with("tel:") || val.starts_with("javascript:") {
+                continue;
+            }
+
+            let parts: Vec<_> = if attr.to_lowercase() == "srcset" {
+                val.split(',').collect()
+            } else {
+                vec![val]
+            };
+
+            let mut new_parts = Vec::new();
+            for part in parts {
+                let trimmed = part.trim();
+                let split: Vec<_> = trimmed.split_whitespace().collect();
+                if split.is_empty() { continue; }
+                let url_val = split[0];
+                let rest = &trimmed[url_val.len()..];
+
+                if let Ok(target_url) = base.join(url_val) {
+                    let is_internal = target_url.domain() == root.domain() && 
+                                     (is_subpath(root.path(), target_url.path()) || is_asset(&target_url, attr.to_lowercase() == "href"));
+                    
+                    let new_val = if is_internal {
+                        make_relative(base, &target_url)
+                    } else if hardcode_external {
+                        target_url.to_string()
+                    } else {
+                        url_val.to_string()
+                    };
+                    new_parts.push(format!("{}{}", new_val, rest));
+                } else {
+                    new_parts.push(trimmed.to_string());
+                }
+            }
+
+            let new_attr_val = new_parts.join(", ");
+            let replacement = format!("{}=\"{}\"", attr, new_attr_val);
+            
+            let range = full_match.range();
+            new_result.replace_range((range.start + offset)..(range.end + offset), &replacement);
+            offset = offset + replacement.len() - (range.end - range.start);
+        }
+        result = new_result;
+    }
+
+    result
+}
+
+fn rewrite_css(content: &str, base: &Url, root: &Url, hardcode_external: bool) -> String {
+    let mut result = content.to_string();
+    let mut offset = 0;
+    
+    let re = &*CSS_URL_RE;
+    let original = result.clone();
+    for cap in re.captures_iter(&original) {
+        let full_match = cap.get(0).unwrap();
+        let val = cap.get(1).or_else(|| cap.get(2)).unwrap().as_str();
+        
+        if val.starts_with("data:") { continue; }
+
+        if let Ok(target_url) = base.join(val) {
+            let is_internal = target_url.domain() == root.domain();
+            let new_val = if is_internal {
+                make_relative(base, &target_url)
+            } else if hardcode_external {
+                target_url.to_string()
+            } else {
+                val.to_string()
+            };
+
+            let replacement = if cap.get(1).is_some() {
+                format!("url(\"{}\")", new_val)
+            } else {
+                format!("@import \"{}\"", new_val)
+            };
+
+            let range = full_match.range();
+            result.replace_range((range.start + offset)..(range.end + offset), &replacement);
+            offset = offset + replacement.len() - (range.end - range.start);
+        }
+    }
+    result
+}
+
+fn make_relative(base: &Url, target: &Url) -> String {
+    let base_path = base.path();
+    let target_path = target.path();
+
+    let base_parts: Vec<&str> = base_path.split('/').filter(|s| !s.is_empty()).collect();
+    let target_parts: Vec<&str> = target_path.split('/').filter(|s| !s.is_empty()).collect();
+
+    let mut common = 0;
+    for (b, t) in base_parts.iter().zip(target_parts.iter()) {
+        if b == t {
+            common += 1;
+        } else {
+            break;
+        }
+    }
+
+    // Number of steps up from base to common ancestor
+    // If base is a file, we go up from its directory.
+    let ups = if base_parts.len() > common {
+        base_parts.len() - common - (if base_path.ends_with('/') { 0 } else { 1 })
+    } else {
+        0
+    };
+
+    let mut rel = "../".repeat(ups);
+    rel.push_str(&target_parts[common..].join("/"));
+    
+    if target_path.ends_with('/') && !rel.is_empty() && !rel.ends_with('/') {
+        rel.push('/');
+    }
+    
+    if rel.is_empty() {
+        if let Some(last) = target_parts.last() {
+            last.to_string()
+        } else {
+            ".".to_string()
+        }
+    } else {
+        rel
+    }
 }
 
 async fn fetch_url(client: &Client, url: &Url) -> Result<(Vec<u8>, Url, bool, bool)> {

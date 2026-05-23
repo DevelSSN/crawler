@@ -90,7 +90,8 @@ async fn main() -> Result<()> {
                         &root_clone, 
                         &args_clone.output, 
                         job_clone.clone(), 
-                        should_extract
+                        should_extract,
+                        args_clone.hardcode_external,
                     ).await;
 
                     let links = match result {

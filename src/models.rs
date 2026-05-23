@@ -15,6 +15,9 @@ pub struct Args {
 
     #[arg(long, default_value_t = 4)]
     pub workers: usize,
+
+    #[arg(long, default_value = "false")]
+    pub hardcode_external: bool,
 }
 
 #[derive(Clone, Debug)]
