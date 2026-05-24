@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>[ Start New Crawl ]</title>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+  <body>
+    <div class="nav">
+      <a href="./">[ Back to Index ]</a>
+    </div>
+    <h1>[ Start New Crawl ]</h1>
+    <form action="crawl" method="post">
+      <div class="field">
+        <label for="name">Project Name:</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          placeholder="e.g. spring-boot"
+          required
+        />
+        <div class="hint">
+          The name of the folder where docs will be stored.
+        </div>
+      </div>
+      <div class="field">
+        <label for="url">Seed URL:</label>
+        <input
+          type="url"
+          id="url"
+          name="url"
+          placeholder="https://docs.example.com"
+          required
+        />
+        <div class="hint">The starting point for the recursive crawler.</div>
+      </div>
+      <div style="display: flex; gap: 2rem">
+        <div class="field">
+          <label for="depth">Crawl Depth:</label>
+          <input
+            type="number"
+            id="depth"
+            name="depth"
+            value="3"
+            min="1"
+            max="10"
+          />
+        </div>
+        <div class="field">
+          <label for="workers">Workers:</label>
+          <input
+            type="number"
+            id="workers"
+            name="workers"
+            value="4"
+            min="1"
+            max="16"
+          />
+        </div>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="hardcodeExternal" name="hardcodeExternal" />
+        <label for="hardcodeExternal">Hardcode External Links</label>
+      </div>
+      <button type="submit">Execute Crawler</button>
+    </form>
+  </body>
+</html>

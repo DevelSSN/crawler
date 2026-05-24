@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>[ Documentation Index ]</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <h1>[ Documentation Index ]</h1>
+
+    <div class="nav">[ <a href="ui/crawl">Add New Documentation</a> ]</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Entry Point</th>
+          <th>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#for p in projects}
+        <tr>
+          <td><strong>{p.name}</strong></td>
+          <td>
+            <a href="v1/{p.name}/{p.relativeEntryPoint}">View Documentation</a>
+          </td>
+          <td class="timestamp">{p.lastModified}</td>
+        </tr>
+        {/for}
+      </tbody>
+    </table>
+  </body>
+</html>

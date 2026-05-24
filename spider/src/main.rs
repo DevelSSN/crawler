@@ -46,7 +46,8 @@ async fn main() -> Result<()> {
 
     let mut visited = HashSet::<String>::new();
     let mut queue = VecDeque::<Job>::new();
-    let (tx, mut rx) = mpsc::channel::<WorkerResult>(args.workers * 2);
+    let workers = args.workers.max(1);
+    let (tx, mut rx) = mpsc::channel::<WorkerResult>(workers * 2);
 
     // Seed
     queue.push_back(Job {
@@ -58,7 +59,7 @@ async fn main() -> Result<()> {
 
     loop {
         // 1. Dispatch work if we have capacity and jobs
-        while active_workers < args.workers && !queue.is_empty() {
+        while active_workers < workers && !queue.is_empty() {
             if let Some(job) = queue.pop_front() {
                 let norm = normalize_url(&job.url);
                 if !visited.insert(norm) {

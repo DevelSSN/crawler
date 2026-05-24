@@ -1,0 +1,107 @@
+body {
+  font-family: ui-monospace, Consolas, "Liberation Mono", Menlo, monospace;
+  background: #fff;
+  color: #000;
+  margin: 2rem;
+  line-height: 1.4;
+}
+h1 {
+  font-size: 1.2rem;
+  border-bottom: 2px solid #000;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.nav {
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+.nav a {
+  color: #0000ee;
+  text-decoration: none;
+}
+.nav a:hover {
+  text-decoration: underline;
+}
+/* Table Styles (Index) */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th {
+  text-align: left;
+  background: #f2f2f2;
+  border-bottom: 1px solid #ccc;
+  padding: 0.5rem;
+}
+td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+tr:nth-child(even) {
+  background: #fafafa;
+}
+.timestamp {
+  color: #666;
+  font-size: 0.9rem;
+}
+/* Form Styles (Crawl) */
+form {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 600px;
+  border: 1px solid #ccc;
+  padding: 1.5rem;
+  background: #fafafa;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+label {
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+input[type="text"],
+input[type="url"],
+input[type="number"] {
+  font-family: inherit;
+  padding: 0.4rem;
+  border: 1px solid #999;
+  background: #fff;
+}
+input:focus {
+  outline: 2px solid #000;
+}
+.hint {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: -0.2rem;
+}
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+button {
+  font-family: inherit;
+  width: fit-content;
+  padding: 0.5rem 1.5rem;
+  background: #eee;
+  border: 1px solid #999;
+  border-bottom: 2px solid #666;
+  cursor: pointer;
+  font-weight: bold;
+}
+button:active {
+  border-bottom: 1px solid #999;
+  transform: translateY(1px);
+}
+a {
+  color: #0000ee;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
