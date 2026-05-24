@@ -1,15 +1,18 @@
 package org.acme.doctech.service;
 
 import module java.base;
-
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.acme.doctech.model.CrawlRequest;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.context.ManagedExecutor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @ApplicationScoped
 public class CrawlService {
+  private static final Logger log = LoggerFactory.getLogger(CrawlService.class);
+
   @ConfigProperty(name = "docs.root.path")
   String rootPath;
 
@@ -38,8 +41,12 @@ public class CrawlService {
     executor.runAsync(
         () -> {
           try {
+            log.info("Starting crawl for project: {} at URL: {}", request.name(), request.url());
+
             // Log version for audit
-            new ProcessBuilder("crawler", "--version").inheritIO().start().waitFor();
+            Process versionProcess = new ProcessBuilder("crawler", "--version").start();
+            logStream(versionProcess.getInputStream(), "CRAWLER-VER");
+            versionProcess.waitFor();
 
             var outputPath = Paths.get(rootPath).resolve(request.name()).toAbsolutePath();
 
@@ -58,18 +65,35 @@ public class CrawlService {
             if (request.hardcodeExternal()) {
               pb.command().add("--hardcode-external");
             }
-            // Redirect output to the Quarkus process logs
-            pb.inheritIO();
 
             Process process = pb.start();
+            
+            // Capture stdout and stderr
+            executor.execute(() -> logStream(process.getInputStream(), "CRAWLER-OUT"));
+            executor.execute(() -> logStream(process.getErrorStream(), "CRAWLER-ERR"));
+
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
+              log.info("Crawl completed successfully for project: {}", request.name());
               cache.refresh();
+            } else {
+              log.error("Crawler failed for project: {} with exit code: {}", request.name(), exitCode);
             }
           } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Unexpected error during crawl for project: {}", request.name(), e);
           }
         });
+  }
+
+  private void logStream(InputStream is, String prefix) {
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        log.info("[{}] {}", prefix, line);
+      }
+    } catch (IOException e) {
+      log.warn("Error reading subprocess stream: {}", prefix, e);
+    }
   }
 }

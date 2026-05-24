@@ -51,6 +51,7 @@ impl Resolve for CustomResolver {
 
 use crate::crawler::{allowed_by_robots, fetch_robots_txt, normalize_url, process_url};
 use crate::models::{Args, Job};
+use tracing_subscriber::EnvFilter;
 
 struct WorkerResult {
     links: Vec<Url>,
@@ -59,7 +60,9 @@ struct WorkerResult {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
+        .init();
     let args = Arc::new(Args::parse());
 
     info!(
