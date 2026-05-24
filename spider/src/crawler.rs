@@ -1,15 +1,15 @@
+use crate::models::Job;
 use anyhow::{Result, anyhow};
+use futures_util::StreamExt;
+use regex::Regex;
 use reqwest::Client;
 use robotstxt::DefaultMatcher;
 use scraper::{Html, Selector};
-use std::path::{PathBuf, Path, Component};
-use url::Url;
-use regex::Regex;
+use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 use tokio::fs;
 use tracing::debug;
-use futures_util::StreamExt;
-use crate::models::Job;
+use url::Url;
 
 pub static CSS_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"url\(\s*['"]?([^'")]*)['"]?\s*\)|@import\s+['"]([^'"]+)['"]"#).unwrap()
@@ -67,14 +67,14 @@ pub fn is_subpath(root_path: &str, target_path: &str) -> bool {
 
 pub fn is_asset(url: &Url) -> bool {
     let path = url.path().to_lowercase();
-    path.ends_with(".css") || 
-    path.ends_with(".png") || 
-    path.ends_with(".jpg") || 
-    path.ends_with(".jpeg") || 
-    path.ends_with(".gif") || 
-    path.ends_with(".svg") || 
-    path.ends_with(".webp") ||
-    path.ends_with(".ico")
+    path.ends_with(".css")
+        || path.ends_with(".png")
+        || path.ends_with(".jpg")
+        || path.ends_with(".jpeg")
+        || path.ends_with(".gif")
+        || path.ends_with(".svg")
+        || path.ends_with(".webp")
+        || path.ends_with(".ico")
 }
 
 pub async fn process_url(
@@ -132,14 +132,25 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
 
     // Patterns for href, src
     let patterns = [
-        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"(#[^"]*)"#).unwrap(), false), // Fragments (keep)
-        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"([^"]+)"#).unwrap(), true),
-        (Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*'([^']+)'"#).unwrap(), true),
+        (
+            Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"(#[^"]*)"#).unwrap(),
+            false,
+        ), // Fragments (keep)
+        (
+            Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*"([^"]+)"#).unwrap(),
+            true,
+        ),
+        (
+            Regex::new(r#"(?i)(href|src|srcset|poster|data)\s*=\s*'([^']+)'"#).unwrap(),
+            true,
+        ),
     ];
 
     for (re, is_url) in patterns {
-        if !is_url { continue; }
-        
+        if !is_url {
+            continue;
+        }
+
         let mut new_result = result.clone();
         let mut offset = 0;
 
@@ -148,7 +159,11 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
             let val = cap.get(2).unwrap().as_str();
             let full_match = cap.get(0).unwrap();
 
-            if val.starts_with('#') || val.starts_with("mailto:") || val.starts_with("tel:") || val.starts_with("javascript:") {
+            if val.starts_with('#')
+                || val.starts_with("mailto:")
+                || val.starts_with("tel:")
+                || val.starts_with("javascript:")
+            {
                 continue;
             }
 
@@ -162,14 +177,16 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
             for part in parts {
                 let trimmed = part.trim();
                 let split: Vec<_> = trimmed.split_whitespace().collect();
-                if split.is_empty() { continue; }
+                if split.is_empty() {
+                    continue;
+                }
                 let url_val = split[0];
                 let rest = &trimmed[url_val.len()..];
 
                 if let Ok(target_url) = base.join(url_val) {
-                    let is_internal = target_url.domain() == root.domain() && 
-                                     (is_subpath(root.path(), target_url.path()) || is_asset(&target_url));
-                    
+                    let is_internal = target_url.domain() == root.domain()
+                        && (is_subpath(root.path(), target_url.path()) || is_asset(&target_url));
+
                     let new_val = if is_internal {
                         make_relative(base, &target_url)
                     } else if hardcode_external {
@@ -185,7 +202,7 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
 
             let new_attr_val = new_parts.join(", ");
             let replacement = format!("{}=\"{}\"", attr, new_attr_val);
-            
+
             let range = full_match.range();
             new_result.replace_range((range.start + offset)..(range.end + offset), &replacement);
             offset = offset + replacement.len() - (range.end - range.start);
@@ -199,14 +216,16 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
 fn rewrite_css(content: &str, base: &Url, root: &Url, hardcode_external: bool) -> String {
     let mut result = content.to_string();
     let mut offset = 0;
-    
+
     let re = &*CSS_URL_RE;
     let original = result.clone();
     for cap in re.captures_iter(&original) {
         let full_match = cap.get(0).unwrap();
         let val = cap.get(1).or_else(|| cap.get(2)).unwrap().as_str();
-        
-        if val.starts_with("data:") { continue; }
+
+        if val.starts_with("data:") {
+            continue;
+        }
 
         if let Ok(target_url) = base.join(val) {
             let is_internal = target_url.domain() == root.domain() && is_asset(&target_url);
@@ -258,11 +277,11 @@ fn make_relative(base: &Url, target: &Url) -> String {
 
     let mut rel = "../".repeat(ups);
     rel.push_str(&target_parts[common..].join("/"));
-    
+
     if target_path.ends_with('/') && !rel.is_empty() && !rel.ends_with('/') {
         rel.push('/');
     }
-    
+
     if rel.is_empty() {
         if let Some(last) = target_parts.last() {
             last.to_string()
@@ -277,16 +296,17 @@ fn make_relative(base: &Url, target: &Url) -> String {
 async fn fetch_url(client: &Client, url: &Url) -> Result<(Vec<u8>, Url, bool, bool)> {
     let resp = client.get(url.clone()).send().await?;
     let final_url = resp.url().clone();
-    
+
     if !resp.status().is_success() {
         return Err(anyhow!("Status {} for {}", resp.status(), url));
     }
 
-    let content_type = resp.headers()
+    let content_type = resp
+        .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    
+
     let is_html = content_type.contains("text/html");
     let is_css = content_type.contains("text/css") || final_url.path().ends_with(".css");
 
@@ -308,7 +328,7 @@ async fn fetch_url(client: &Client, url: &Url) -> Result<(Vec<u8>, Url, bool, bo
 
 fn get_storage_path(output: &PathBuf, url: &Url, is_html: bool) -> PathBuf {
     let mut file_path = output.clone();
-    
+
     if let Some(segments) = url.path_segments() {
         for seg in segments {
             if seg.is_empty() || seg == "." || seg == ".." {
@@ -327,22 +347,26 @@ fn get_storage_path(output: &PathBuf, url: &Url, is_html: bool) -> PathBuf {
     if file_path.is_dir() || url.path().ends_with('/') {
         file_path.push("index.html");
     }
-    
+
     if is_html && file_path.extension().is_none() {
         file_path.set_extension("html");
     }
 
     // Final traversal check
     let mut depth = 0;
-    for component in file_path.strip_prefix(output).unwrap_or(Path::new("")).components() {
+    for component in file_path
+        .strip_prefix(output)
+        .unwrap_or(Path::new(""))
+        .components()
+    {
         match component {
             Component::Normal(_) => depth += 1,
-            Component::CurDir => {},
+            Component::CurDir => {}
             Component::ParentDir => depth -= 1,
             _ => { /* RootDir, Prefix etc should not happen here */ }
         }
     }
-    
+
     if depth < 0 {
         // Fallback to a safe name if something went wrong
         let mut fallback = output.clone();
@@ -392,7 +416,9 @@ fn extract_from_html(bytes: &[u8], final_url: &Url, root: &Url) -> Vec<Url> {
         for element in document.select(&selector) {
             if let Some(val) = element.value().attr(attr) {
                 let parts: Vec<_> = if attr == "srcset" {
-                    val.split(',').filter_map(|p| p.trim().split_whitespace().next()).collect()
+                    val.split(',')
+                        .filter_map(|p| p.trim().split_whitespace().next())
+                        .collect()
                 } else {
                     vec![val]
                 };
@@ -418,7 +444,11 @@ fn extract_from_html(bytes: &[u8], final_url: &Url, root: &Url) -> Vec<Url> {
 
     let style_selector = Selector::parse("style").unwrap();
     for element in document.select(&style_selector) {
-        extracted.extend(extract_from_css(element.inner_html().as_bytes(), &base_url, root));
+        extracted.extend(extract_from_css(
+            element.inner_html().as_bytes(),
+            &base_url,
+            root,
+        ));
     }
 
     extracted

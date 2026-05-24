@@ -1,5 +1,6 @@
 package org.acme.doctech.web;
 
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -11,6 +12,7 @@ import org.acme.doctech.service.CrawlService;
 import org.acme.doctech.service.DocCache;
 
 @Path("/api")
+@RolesAllowed("teacher")
 public class APIResource {
   @Inject DocCache cache;
   @Inject CrawlService crawlService;
@@ -26,7 +28,11 @@ public class APIResource {
   @Path("crawl")
   @Consumes(MediaType.APPLICATION_JSON)
   public Response crawl(CrawlRequest request) {
-    crawlService.startCrawl(request);
-    return Response.accepted("Crawl started for " + request.name()).build();
+    try {
+      crawlService.startCrawl(request);
+      return Response.accepted("Crawl started for " + request.name()).build();
+    } catch (IllegalArgumentException e) {
+      return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+    }
   }
 }

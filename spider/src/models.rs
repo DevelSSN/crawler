@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use url::Url;
 
 #[derive(Parser, Debug, Clone)]
+#[command(version = option_env!("PROJECT_VERSION").unwrap_or("unknown"))]
 pub struct Args {
     #[arg(long)]
     pub index: String,

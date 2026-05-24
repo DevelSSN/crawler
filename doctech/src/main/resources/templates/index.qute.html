@@ -6,9 +6,18 @@
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
+    <div style="float: right;">
+      {#if identity:isAuthenticated}
+        User: {identity:principal.name} | <a href="/logout">Logout</a>
+      {#else}
+        <a href="ui/crawl">Teacher Login</a>
+      {/if}
+    </div>
     <h1>[ Documentation Index ]</h1>
 
-    <div class="nav">[ <a href="ui/crawl">Add New Documentation</a> ]</div>
+    {#if sec:isUserInRole('teacher')}
+      <div class="nav">[ <a href="ui/crawl">Add New Documentation</a> ]</div>
+    {/if}
     <table>
       <thead>
         <tr>
