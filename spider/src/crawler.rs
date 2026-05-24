@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use reqwest::Client;
 use robotstxt::DefaultMatcher;
 use scraper::{Html, Selector};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path, Component};
 use url::Url;
 use regex::Regex;
 use std::sync::LazyLock;
@@ -50,36 +50,31 @@ pub fn normalize_url(url: &Url) -> String {
 }
 
 pub fn is_subpath(root_path: &str, target_path: &str) -> bool {
-    if target_path == root_path {
-        return true;
-    }
-    if !target_path.starts_with(root_path) {
+    let root_parts: Vec<&str> = root_path.split('/').filter(|s| !s.is_empty()).collect();
+    let target_parts: Vec<&str> = target_path.split('/').filter(|s| !s.is_empty()).collect();
+
+    if target_parts.len() < root_parts.len() {
         return false;
     }
-    root_path.ends_with('/') || target_path.chars().nth(root_path.len()) == Some('/')
+
+    for (r, t) in root_parts.iter().zip(target_parts.iter()) {
+        if r != t {
+            return false;
+        }
+    }
+    true
 }
 
-pub fn is_asset(url: &Url, is_link: bool) -> bool {
-    if !is_link {
-        return true;
-    }
+pub fn is_asset(url: &Url) -> bool {
     let path = url.path().to_lowercase();
     path.ends_with(".css") || 
-    path.ends_with(".js") ||
-    path.ends_with(".png") ||
-    path.ends_with(".jpg") ||
-    path.ends_with(".jpeg") ||
+    path.ends_with(".png") || 
+    path.ends_with(".jpg") || 
+    path.ends_with(".jpeg") || 
     path.ends_with(".gif") || 
     path.ends_with(".svg") || 
     path.ends_with(".webp") ||
-    path.ends_with(".ico") ||
-    path.ends_with(".woff") ||
-    path.ends_with(".woff2") ||
-    path.ends_with(".ttf") ||
-    path.ends_with(".otf") || 
-    path.ends_with(".pdf") ||
-    path.ends_with(".xml") ||
-    path.ends_with(".txt")
+    path.ends_with(".ico")
 }
 
 pub async fn process_url(
@@ -173,7 +168,7 @@ fn rewrite_html(content: &str, base: &Url, root: &Url, hardcode_external: bool) 
 
                 if let Ok(target_url) = base.join(url_val) {
                     let is_internal = target_url.domain() == root.domain() && 
-                                     (is_subpath(root.path(), target_url.path()) || is_asset(&target_url, attr.to_lowercase() == "href"));
+                                     (is_subpath(root.path(), target_url.path()) || is_asset(&target_url));
                     
                     let new_val = if is_internal {
                         make_relative(base, &target_url)
@@ -214,7 +209,7 @@ fn rewrite_css(content: &str, base: &Url, root: &Url, hardcode_external: bool) -
         if val.starts_with("data:") { continue; }
 
         if let Ok(target_url) = base.join(val) {
-            let is_internal = target_url.domain() == root.domain();
+            let is_internal = target_url.domain() == root.domain() && is_asset(&target_url);
             let new_val = if is_internal {
                 make_relative(base, &target_url)
             } else if hardcode_external {
@@ -312,15 +307,21 @@ async fn fetch_url(client: &Client, url: &Url) -> Result<(Vec<u8>, Url, bool, bo
 }
 
 fn get_storage_path(output: &PathBuf, url: &Url, is_html: bool) -> PathBuf {
-    let path_segments: Vec<_> = url.path_segments()
-        .map(|s| s.collect::<Vec<_>>())
-        .unwrap_or_else(|| vec!["index.html"]);
-    
     let mut file_path = output.clone();
-    for seg in path_segments {
-        if !seg.is_empty() {
-            file_path.push(seg);
+    
+    if let Some(segments) = url.path_segments() {
+        for seg in segments {
+            if seg.is_empty() || seg == "." || seg == ".." {
+                continue;
+            }
+            // Additional safety: ensure the segment doesn't contain path separators
+            let path_seg = Path::new(seg);
+            if let Some(name) = path_seg.file_name() {
+                file_path.push(name);
+            }
         }
+    } else {
+        file_path.push("index.html");
     }
 
     if file_path.is_dir() || url.path().ends_with('/') {
@@ -330,6 +331,25 @@ fn get_storage_path(output: &PathBuf, url: &Url, is_html: bool) -> PathBuf {
     if is_html && file_path.extension().is_none() {
         file_path.set_extension("html");
     }
+
+    // Final traversal check
+    let mut depth = 0;
+    for component in file_path.strip_prefix(output).unwrap_or(Path::new("")).components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::CurDir => {},
+            Component::ParentDir => depth -= 1,
+            _ => { /* RootDir, Prefix etc should not happen here */ }
+        }
+    }
+    
+    if depth < 0 {
+        // Fallback to a safe name if something went wrong
+        let mut fallback = output.clone();
+        fallback.push("error_safe_fallback.html");
+        return fallback;
+    }
+
     file_path
 }
 
@@ -359,18 +379,15 @@ fn extract_from_html(bytes: &[u8], final_url: &Url, root: &Url) -> Vec<Url> {
     }
 
     let selectors = [
-        ("a[href]", "href", true),
+        ("a[href]", "href", true), // (selector, attr, is_nav)
         ("link[rel=\"stylesheet\"][href]", "href", false),
-        ("script[src]", "src", false),
         ("img[src]", "src", false),
         ("img[srcset]", "srcset", false),
         ("source[srcset]", "srcset", false),
         ("link[rel*=\"icon\"]", "href", false),
-        ("iframe[src]", "src", false),
-        ("embed[src]", "src", false),
     ];
 
-    for (sel_str, attr, is_link_tag) in selectors {
+    for (sel_str, attr, is_nav) in selectors {
         let selector = Selector::parse(sel_str).unwrap();
         for element in document.select(&selector) {
             if let Some(val) = element.value().attr(attr) {
@@ -383,9 +400,15 @@ fn extract_from_html(bytes: &[u8], final_url: &Url, root: &Url) -> Vec<Url> {
                 for url_val in parts {
                     if let Ok(mut next_url) = base_url.join(url_val) {
                         next_url.set_fragment(None);
-                        if next_url.domain() == root.domain() && 
-                           (is_subpath(root.path(), next_url.path()) || is_asset(&next_url, is_link_tag)) {
-                            extracted.push(next_url);
+                        if next_url.domain() == root.domain() {
+                            let in_subpath = is_subpath(root.path(), next_url.path());
+                            let allowed_asset = is_asset(&next_url);
+
+                            // Strict: Navigation links must be in subpath.
+                            // Assets (CSS, Img) can be outside but on same domain.
+                            if (is_nav && in_subpath) || allowed_asset {
+                                extracted.push(next_url);
+                            }
                         }
                     }
                 }
@@ -408,7 +431,7 @@ fn extract_from_css(bytes: &[u8], base_url: &Url, root: &Url) -> Vec<Url> {
         if let Some(val) = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str()) {
             if let Ok(mut next_url) = base_url.join(val) {
                 next_url.set_fragment(None);
-                if next_url.domain() == root.domain() {
+                if next_url.domain() == root.domain() && is_asset(&next_url) {
                     extracted.push(next_url);
                 }
             }
