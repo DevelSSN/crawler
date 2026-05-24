@@ -8,6 +8,7 @@ use regex::Regex;
 use std::sync::LazyLock;
 use tokio::fs;
 use tracing::debug;
+use futures_util::StreamExt;
 use crate::models::Job;
 
 pub static CSS_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -293,7 +294,19 @@ async fn fetch_url(client: &Client, url: &Url) -> Result<(Vec<u8>, Url, bool, bo
     
     let is_html = content_type.contains("text/html");
     let is_css = content_type.contains("text/css") || final_url.path().ends_with(".css");
-    let bytes = resp.bytes().await?.to_vec();
+
+    // Phase 2: Enforce size limit (10MB)
+    let max_size = 100 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    let mut stream = resp.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if bytes.len() + chunk.len() > max_size {
+            return Err(anyhow!("Response too large (exceeds {} bytes)", max_size));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
 
     Ok((bytes, final_url, is_html, is_css))
 }

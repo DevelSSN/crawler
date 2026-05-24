@@ -5,12 +5,43 @@ use anyhow::Result;
 use clap::Parser;
 use reqwest::Client;
 use std::collections::{HashSet, VecDeque};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 use tracing::{info, warn, error};
 use url::Url;
+use ipnet::IpNet;
+
+use reqwest::dns::{Resolve, Resolving, Name};
+
+struct CustomResolver {
+    forbidden: Vec<IpNet>,
+}
+
+impl Resolve for CustomResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let forbidden = self.forbidden.clone();
+        let name_str = name.as_str().to_string();
+        Box::pin(async move {
+            // lookup_host typically takes "host:port", but reqwest Name might not include port or might be handled differently.
+            // Actually Name::as_str() is just the hostname. We might need a default port or assume reqwest handles it.
+            // reqwest documentation shows Resolve::resolve takes Name.
+            let addrs = tokio::net::lookup_host(format!("{}:0", name_str)).await?;
+            let filtered: Vec<SocketAddr> = addrs.filter(|addr| {
+                let ip = addr.ip();
+                !forbidden.iter().any(|net| net.contains(&ip))
+            }).collect();
+            
+            if filtered.is_empty() {
+                Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Access to private/internal IP denied")) as Box<dyn std::error::Error + Send + Sync>)
+            } else {
+                Ok(Box::new(filtered.into_iter()) as Box<dyn Iterator<Item = SocketAddr> + Send>)
+            }
+        })
+    }
+}
 
 use crate::models::{Args, Job};
 use crate::crawler::{allowed_by_robots, fetch_robots_txt, normalize_url, process_url};
@@ -31,9 +62,18 @@ async fn main() -> Result<()> {
     fs::create_dir_all(&args.output).await?;
 
     let root = Url::parse(&args.index)?;
+    
+    let forbidden_ranges: Vec<IpNet> = [
+        "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"
+    ].iter().map(|s| s.parse().unwrap()).collect();
+
     let client = Arc::new(Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .user_agent("rust-crawler/0.1")
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(5))
+        .dns_resolver(Arc::new(CustomResolver { forbidden: forbidden_ranges }))
         .build()?);
 
     info!("Fetching robots.txt...");
