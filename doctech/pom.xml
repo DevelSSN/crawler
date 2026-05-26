@@ -30,14 +30,6 @@
     </dependencies>
   </dependencyManagement>
   <dependencies>
-    <!-- Dependency to ensure spider is built first -->
-    <dependency>
-      <groupId>org.acme.crawler</groupId>
-      <artifactId>spider-worker</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
-      <type>pom</type>
-      <scope>provided</scope>
-    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-qute</artifactId>
