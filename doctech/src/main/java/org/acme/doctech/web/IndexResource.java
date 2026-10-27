@@ -2,7 +2,6 @@ package org.acme.doctech.web;
 
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -33,7 +32,6 @@ public class IndexResource {
   @GET
   @Path("crawl")
   @Produces(MediaType.TEXT_HTML)
-  @RolesAllowed("teacher")
   public TemplateInstance crawlForm() {
     return crawl.instance();
   }
@@ -41,7 +39,6 @@ public class IndexResource {
   @POST
   @Path("crawl")
   @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-  @RolesAllowed("teacher")
   public Response processCrawl(
       @RestForm String name,
       @RestForm String url,
