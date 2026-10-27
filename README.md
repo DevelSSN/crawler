@@ -96,3 +96,12 @@ Build a container image using the pre-configured Jib profile:
 ```bash
 mvn clean package -Pjib -Dquarkus.container-image.build=true
 ```
+
+
+## Quick Start (No Auth)
+```bash
+./install-build.sh
+export DocTechHome=/var/lib/crawler/docs
+java -DDocTechHome=$DocTechHome -jar doctech/target/quarkus-app/quarkus-run.jar
+```
+App: http://localhost:8080/docs
