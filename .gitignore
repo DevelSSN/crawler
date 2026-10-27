@@ -3,3 +3,6 @@
 /doctech/src/main/jib/
 target/
 TODO.md
+
+# release staging
+dist/
