@@ -1,6 +1,5 @@
 package org.acme.doctech.web;
 
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -12,7 +11,6 @@ import org.acme.doctech.service.CrawlService;
 import org.acme.doctech.service.DocCache;
 
 @Path("/api")
-@RolesAllowed("teacher")
 public class APIResource {
   @Inject DocCache cache;
   @Inject CrawlService crawlService;
